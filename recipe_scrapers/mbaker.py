@@ -166,13 +166,6 @@ class MBaker(object):
             page += 1
 
 
-class Crawler(object):
-
-    def __init__(self):
-        pass
-
-
-
 
 def test():
     m = MBaker()
