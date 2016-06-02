@@ -8,6 +8,7 @@ from requests import HTTPError
 from datetime import timedelta
 
 
+
 class NoRecipeException(Exception):
     pass
 
@@ -59,14 +60,13 @@ class Recipe(object):
         self._time_setter('_total_time', value)
 
 
-
-
 class MBaker(object):
 
     def __init__(self):
         self.base_url = 'http://minimalistbaker.com/recipes/'
         requests_cache.install_cache()
 
+    # Todo: requests stuff should be outside class
     def get_html(self, url):
         """
         Return the html for a web url.
@@ -164,6 +164,14 @@ class MBaker(object):
             except HTTPError:
                 break
             page += 1
+
+
+class Crawler(object):
+
+    def __init__(self):
+        pass
+
+
 
 
 def test():
