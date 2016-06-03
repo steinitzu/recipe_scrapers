@@ -2,8 +2,13 @@ from datetime import timedelta
 
 import isodate
 
+from . import log
+
 
 class NoRecipeException(Exception):
+    pass
+
+class InsufficientDataException(Exception):
     pass
 
 
@@ -13,6 +18,7 @@ class Recipe(object):
     image = None
     author = None
     recipe_yield = None
+    recipe_category = None
     _cook_time = None
     _prep_time = None
     _total_time = None
@@ -27,7 +33,8 @@ class Recipe(object):
         elif isinstance(value, timedelta):
             setattr(self, attr, value)
         else:
-            raise TypeError('Value {} is of unsupported type for a timedelta')
+            raise TypeError(
+                'Value {} is of unsupported type for a timedelta'.format(value))
 
     @property
     def cook_time(self):
@@ -60,6 +67,7 @@ def get_recipe(soup, url):
     searching for a container with the:
     itemtype='http://schema.org/Recipe
     """
+    print url
     bigsoup = soup
     recipes = bigsoup.find_all(
         attrs={'itemtype': 'http://schema.org/Recipe'})
@@ -81,8 +89,21 @@ def get_recipe(soup, url):
         recipe.author = soup.find_all(attrs={'itemprop': 'author'})[0].text
     except (AttributeError, IndexError):
         recipe.author = None
-    recipe.recipe_yield = soup.find_all(
-        attrs={'itemprop': 'recipeYield'})[0].text
+    try:
+        recipe.recipe_yield = soup.find_all(
+            attrs={'itemprop': 'recipeYield'})[0].text
+    except IndexError:
+        raise InsufficientDataException(
+            'Recipe at {} is missing recipeYield field'.format(url))
+
+
+    # TODO: Find another way to get category
+    try:
+        recipe.recipe_category = soup.find_all(
+            attrs={'itemprop': 'recipeCategory'})[0].text
+    except IndexError:
+        log.warning(
+            'No category found for recipe:{}'.format(url))
 
     cook_time = soup.find_all(attrs={'itemprop': 'cookTime'})
     if cook_time:

@@ -1,4 +1,5 @@
 import time
+from random import randint
 
 import requests
 import requests_cache
@@ -6,7 +7,7 @@ from bs4 import BeautifulSoup
 from requests import HTTPError
 from requests.compat import urlencode, urljoin
 
-from .recipes import get_recipe
+from .recipes import get_recipe, NoRecipeException, InsufficientDataException
 
 
 class Request(object):
@@ -25,7 +26,7 @@ class Request(object):
         if requests_cache.get_cache().has_url(url):
             pass
         else:
-            time.sleep(5)
+            time.sleep(randint(5,20))
         r = requests.get(url)
         if r.status_code == 404:
             raise HTTPError('404')
@@ -34,6 +35,13 @@ class Request(object):
     def get_soup(self, url, **kwargs):
         html = self.get_html(url, **kwargs)
         return BeautifulSoup(html, 'html.parser')
+
+    def _flat_crawl(self):
+        for link in self.get_links(self.base_url):
+            try:
+                yield get_recipe(self.get_soup(link), link)
+            except (NoRecipeException, InsufficientDataException):
+                continue
 
     def _pagination_crawl(self):
         page = 1
@@ -44,8 +52,12 @@ class Request(object):
             except HTTPError:
                 break
             for link in pagelinks:
-                yield get_recipe(self.get_soup(link), link)
+                try:
+                    yield get_recipe(self.get_soup(link), link)
+                except (NoRecipeException, InsufficientDataException):
+                    continue
             page += 1
+
 
 class MinimalistBakerCrawler(Request):
 
@@ -85,8 +97,45 @@ class CookieAndKateCrawler(Request):
         return links
 
     def crawl(self):
-        for link in self.get_links(self.base_url):
-            yield get_recipe(self.get_soup(link), link)
+        return self._flat_crawl()
+
+
+class NaturallyEllaCrawler(Request):
+
+    base_url = 'http://naturallyella.com/recipes/?'
+
+    def page_url(self, page_no):
+        return self.base_url+urlencode((('sf_paged', page_no),))
+
+    def get_links(self, url):
+        links = []
+        soup = self.get_soup(url)
+        recipe_divs = soup.find_all('div', {'class': 'fm_recipe'})
+        for div in recipe_divs:
+            url = div.find_all('a')[0].get('href')
+            links.append(url)
+        return links
+
+    def crawl(self):
+        return self._pagination_crawl()
+
+
+class SweetPotatoSoulCrawler(Request):
+
+    base_url = 'http://sweetpotatosoul.com/recipes'
+
+    def get_links(self, url):
+        links = []
+        soup = self.get_soup(url)
+        recipe_divs = soup.find_all('div', {'class': 'recipe'})
+        for div in recipe_divs:
+            # TODO: category could be div.get('class')[1]
+            url = div.find_all('a')[0].get('href')
+            links.append(url)
+        return links
+
+    def crawl(self):
+        return self._flat_crawl()
 
 
 class PinchOfYumCrawler(Request):
@@ -108,7 +157,39 @@ class PinchOfYumCrawler(Request):
         return links
 
 
+class BonappetitCrawler(Request):
+
+    base_url = 'http://bonappetit.com/recipes'
+    cat_base_url = 'http://bonappetit.com/recipes'
+    categories = ('quick-recipes', 'family-meals',
+                  'desserts', 'chicken', 'vegetarian',
+                  'holidays-recipes')
+
+    def get_links(self, url):
+        links = []
+        soup = self.get_soup(url)
+        recipe_divs = soup.find_all('div', {'class': 'article-thumb-container'})
+        for div in recipe_divs:
+            url = div.find_all('a')[0].get('href')
+            links.append(url)
+        return links
+
+    def page_url(self, page_no):
+        return self.cat_base_url + '/page/{}'.format(page_no)
+
+    def crawl(self):
+        for category in self.categories:
+            print 'category:', category
+            self.cat_base_url = self.base_url + '/{}'.format(category)
+            return self._pagination_crawl()
+
+
+
+
+
+
 def minimalistbakertest():
+    # Perfect
     m = MinimalistBakerCrawler()
     for i in m.crawl():
         print i.__dict__
@@ -116,14 +197,45 @@ def minimalistbakertest():
 
 
 def cookieandkatetest():
+    # Perfect
     m = CookieAndKateCrawler()
     for i in m.crawl():
         print i.__dict__
         print '\n'
 
 
+def naturallyellatest():
+    # Missing categories
+    m = NaturallyEllaCrawler()
+    for i in m.crawl():
+        print i.__dict__
+        print '\n'
+
+
+def sweetpotatosoultest():
+    # Missing categories
+    m = SweetPotatoSoulCrawler()
+    for i in m.crawl():
+        print i.__dict__
+        print '\n'
+
+
+
+
+
+
+
 def pinchofyumtest():
+    # Ehhh
     m = PinchOfYumCrawler()
+    for i in m.crawl():
+        print i.__dict__
+        print '\n'
+
+
+def bonappetittest():
+    # Messed up
+    m = BonappetitCrawler()
     for i in m.crawl():
         print i.__dict__
         print '\n'
