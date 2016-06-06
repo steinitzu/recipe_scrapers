@@ -67,7 +67,7 @@ def get_recipe(soup, url):
     searching for a container with the:
     itemtype='http://schema.org/Recipe
     """
-    print url
+    log.info('Scraping {}'.format(url))
     bigsoup = soup
     recipes = bigsoup.find_all(
         attrs={'itemtype': 'http://schema.org/Recipe'})
@@ -105,6 +105,13 @@ def get_recipe(soup, url):
         log.warning(
             'No category found for recipe:{}'.format(url))
 
+    try:
+        recipe.recipe_cuisine = soup.find_all(
+            attrs={'itemprop': 'recipeCuisine'})[0].text
+    except IndexError:
+        log.warning(
+            'No cuisine property found for recipe:{}'.format(url))
+
     cook_time = soup.find_all(attrs={'itemprop': 'cookTime'})
     if cook_time:
         recipe.cook_time = cook_time[0].get('datetime')
@@ -119,5 +126,7 @@ def get_recipe(soup, url):
 
     for ingtag in soup.find_all(attrs={'itemprop': 'ingredients'}):
         recipe.ingredients.append(ingtag.text)
+
+    log.info('Result: {}'.format(recipe.__dict__))
 
     return recipe
