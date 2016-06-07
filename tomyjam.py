@@ -13,9 +13,13 @@ from recipe_scrapers.crawlers import (MinimalistBakerCrawler,
                                       CookieAndKateCrawler,
                                       NaturallyEllaCrawler,
                                       SweetPotatoSoulCrawler)
+from recipe_scrapers import log, logging
 
 
 def main():
+    if log.level == logging.DEBUG:
+        db.drop_all()
+        db.create_all()
     exporter = SQLAlchemyExporter(db, Recipe, Ingredient)
     scrape_and_export(exporter, [MinimalistBakerCrawler(),
                                  CookieAndKateCrawler(),

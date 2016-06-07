@@ -18,6 +18,7 @@ class SQLAlchemyExporter(object):
                        'author',
                        'recipe_yield',
                        'recipe_category',
+                       'recipe_cuisine',
                        'cook_time',
                        'prep_time',
                        'total_time'):

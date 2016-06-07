@@ -1,8 +1,9 @@
-from datetime import timedelta
+import re
 
 import isodate
-
 from . import log
+from datetime import timedelta
+from isodate.isoerror import ISO8601Error
 
 
 class NoRecipeException(Exception):
@@ -19,6 +20,7 @@ class Recipe(object):
     author = None
     recipe_yield = None
     recipe_category = None
+    recipe_cuisine = None
     _cook_time = None
     _prep_time = None
     _total_time = None
@@ -61,6 +63,9 @@ class Recipe(object):
         self._time_setter('_total_time', value)
 
 
+
+
+
 def get_recipe(soup, url):
     """
     Given a BeautifulSoup object, finds a hrecipe by
@@ -85,10 +90,21 @@ def get_recipe(soup, url):
             break
 
     recipe.name = soup.find_all(attrs={'itemprop': 'name'})[0].text
-    try:
-        recipe.author = soup.find_all(attrs={'itemprop': 'author'})[0].text
-    except (AttributeError, IndexError):
-        recipe.author = None
+
+    attrs = [(soup, {'itemprop': 'author'}),
+             (bigsoup, {'property': re.compile('^(.*)author$')}),
+             (bigsoup, {'class': re.compile('^(.*)author$')})]
+
+    auth = None
+    for s, a in attrs:
+        auth = s.find(attrs=a)
+        if auth:
+            recipe.author = auth.text
+            break
+    if not auth:
+        raise Exception(
+            'No author found for recipe: {}'.format(url))
+
     try:
         recipe.recipe_yield = soup.find_all(
             attrs={'itemprop': 'recipeYield'})[0].text
@@ -112,21 +128,27 @@ def get_recipe(soup, url):
         log.warning(
             'No cuisine property found for recipe:{}'.format(url))
 
-    cook_time = soup.find_all(attrs={'itemprop': 'cookTime'})
-    if cook_time:
-        recipe.cook_time = cook_time[0].get('datetime')
-
-    prep_time = soup.find_all(attrs={'itemprop': 'prepTime'})
-    if prep_time:
-        recipe.prep_time = prep_time[0].get('datetime')
-
-    total_time = soup.find_all(attrs={'itemprop': 'totalTime'})
-    if total_time:
-        recipe.total_time = total_time[0].get('datetime')
+    time_setter('cookTime', 'cook_time', recipe, soup)
+    time_setter('prepTime', 'prep_time', recipe, soup)
+    time_setter('totalTime', 'total_time', recipe, soup)
 
     for ingtag in soup.find_all(attrs={'itemprop': 'ingredients'}):
         recipe.ingredients.append(ingtag.text)
 
-    log.info('Result: {}'.format(recipe.__dict__))
+    #log.info('Result: {}'.format(recipe.__dict__))
 
     return recipe
+
+
+def time_setter(itemprop, attribute, recipe, soup):
+    t = soup.find_all(attrs={'itemprop': itemprop})
+    if t:
+        t = t[0]
+        try:
+            setattr(recipe, attribute, t.get('datetime'))
+        except ISO8601Error:
+            t = t.find_all(attrs={'class': 'value-title'})
+            setattr(recipe, attribute, t[0].get('title'))
+    else:
+        log.warning('No {} itemprop on recipe {}'.format(
+            itemprop, recipe.url))
