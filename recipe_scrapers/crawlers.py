@@ -46,7 +46,7 @@ class Request(object):
             try:
                 yield get_recipe(self.get_soup(link), link)
             except (NoRecipeException, InsufficientDataException) as e:
-                log.warning(e.message)
+                log.error(e.message)
                 continue
 
     def _pagination_crawl(self):
@@ -65,7 +65,7 @@ class Request(object):
                 try:
                     yield get_recipe(self.get_soup(link), link)
                 except (NoRecipeException, InsufficientDataException) as e:
-                    log.warning(e.message)
+                    log.error(e.message)
                     continue
             page += 1
 
