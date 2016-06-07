@@ -1,0 +1,8 @@
+* To concat all ingredients into single Column
+
+CREATE VIEW ingredient_view AS SELECT recipe_id, string_agg(name, ', ') AS ingredients FROM ingredient GROUP BY recipe_id;
+
+* To do a text search
+
+SELECT recipe_id FROM ingredient_view WHERE ingredients @@ to_tsquery('tomato&garlic');
+SELECT recipe_id FROM ingredient_view WHERE ingredients @@ 'tomato&garlic&carrot&!onion'::tsquery;
