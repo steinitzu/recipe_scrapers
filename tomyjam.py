@@ -12,7 +12,8 @@ from recipe_scrapers.export import SQLAlchemyExporter, scrape_and_export
 from recipe_scrapers.crawlers import (MinimalistBakerCrawler,
                                       CookieAndKateCrawler,
                                       NaturallyEllaCrawler,
-                                      SweetPotatoSoulCrawler)
+                                      SweetPotatoSoulCrawler,
+                                      SeasonsAndSupperCrawler)
 from recipe_scrapers import log, logging
 
 
@@ -21,10 +22,14 @@ def main():
         db.drop_all()
         db.create_all()
     exporter = SQLAlchemyExporter(db, Recipe, Ingredient)
-    scrape_and_export(exporter, [MinimalistBakerCrawler(),
-                                 CookieAndKateCrawler(),
-                                 NaturallyEllaCrawler(),
-                                 SweetPotatoSoulCrawler()])
+    crawlers = [
+        MinimalistBakerCrawler(),
+        CookieAndKateCrawler(),
+        NaturallyEllaCrawler(),
+        SweetPotatoSoulCrawler(),
+        SeasonsAndSupperCrawler(),
+        ]
+    scrape_and_export(exporter, crawlers)
 
 if __name__ == '__main__':
     main()

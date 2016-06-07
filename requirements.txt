@@ -1,2 +1,3 @@
 isodate
 beautifulsoup4
+lxml

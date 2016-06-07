@@ -8,6 +8,10 @@ from requests import HTTPError
 from requests.compat import urlencode, urljoin
 
 from .recipes import get_recipe, NoRecipeException, InsufficientDataException
+from . import log
+
+class EmptyPageError(Exception):
+    pass
 
 
 class Request(object):
@@ -22,6 +26,7 @@ class Request(object):
         Return the html for a web url.
         Raises HTTPError('404') if page is not found.
         """
+        log.info('Fetching page: {}'.format(url))
         # Give 5 seconds between requests
         if requests_cache.get_cache().has_url(url):
             pass
@@ -34,13 +39,14 @@ class Request(object):
 
     def get_soup(self, url, **kwargs):
         html = self.get_html(url, **kwargs)
-        return BeautifulSoup(html, 'html.parser')
+        return BeautifulSoup(html, 'lxml')
 
     def _flat_crawl(self):
         for link in self.get_links(self.base_url):
             try:
                 yield get_recipe(self.get_soup(link), link)
-            except (NoRecipeException, InsufficientDataException):
+            except (NoRecipeException, InsufficientDataException) as e:
+                log.warning(e.message)
                 continue
 
     def _pagination_crawl(self):
@@ -51,10 +57,15 @@ class Request(object):
                 pagelinks = self.get_links(url)
             except HTTPError:
                 break
+            if not pagelinks:
+                log.warning(
+                    'Page is empty, ending crawl. {}'.format(url))
+                break
             for link in pagelinks:
                 try:
                     yield get_recipe(self.get_soup(link), link)
-                except (NoRecipeException, InsufficientDataException):
+                except (NoRecipeException, InsufficientDataException) as e:
+                    log.warning(e.message)
                     continue
             page += 1
 
@@ -132,6 +143,23 @@ class SweetPotatoSoulCrawler(Request):
             # TODO: category could be div.get('class')[1]
             url = div.find_all('a')[0].get('href')
             links.append(url)
+        return links
+
+    def crawl(self):
+        return self._flat_crawl()
+
+
+class SeasonsAndSupperCrawler(Request):
+
+    base_url = 'http://www.seasonsandsuppers.ca/recipe-index-category/'
+
+    def get_links(self, url):
+        links = []
+        soup = self.get_soup(url)
+
+        for cat in soup.find_all(class_='lcp_catlist'):
+            for li in cat.find_all('li'):
+                links.append(li.find('a').get('href'))
         return links
 
     def crawl(self):

@@ -74,13 +74,12 @@ def get_recipe(soup, url):
     """
     log.info('Scraping {}'.format(url))
     bigsoup = soup
-    recipes = bigsoup.find_all(
-        attrs={'itemtype': 'http://schema.org/Recipe'})
-    if not recipes:
+    soup = bigsoup.find(itemtype='http://schema.org/Recipe')
+    if not soup:
         raise NoRecipeException(
             'No recipe found at: {}'.format(url))
+
     recipe = Recipe()
-    soup = recipes[0]
     recipe.url = url
 
     img = soup.find_all(attrs={'itemprop': 'image'})[0]
@@ -89,7 +88,8 @@ def get_recipe(soup, url):
             recipe.image = img.get(tag)
             break
 
-    recipe.name = soup.find_all(attrs={'itemprop': 'name'})[0].text
+    recipe.name = soup.find(itemprop='name').text
+
 
     attrs = [(soup, {'itemprop': 'author'}),
              (bigsoup, {'property': re.compile('^(.*)author$')}),
