@@ -90,18 +90,25 @@ def get_recipe(soup, url):
 
     recipe.name = soup.find(itemprop='name').text
 
-
     attrs = [(soup, {'itemprop': 'author'}),
              (bigsoup, {'property': re.compile('^(.*)author$')}),
-             (bigsoup, {'class': re.compile('^(.*)author$')})]
+             #(bigsoup, {'class': re.compile('^(.*)author$')}),
+             (bigsoup, {'property': re.compile('^(.*)site_name$')}),
+         ]
 
     auth = None
     for s, a in attrs:
         auth = s.find(attrs=a)
         if auth:
-            recipe.author = auth.text
+            author = auth.text
+            if not author:
+                author = auth.get('content')
+                if not author:
+                    continue
+            recipe.author = author
+            log.info('Used {} to find author'.format(a))
             break
-    if not auth:
+    if not recipe.author:
         raise Exception(
             'No author found for recipe: {}'.format(url))
 
