@@ -1,3 +1,5 @@
+from . import log
+
 class SQLAlchemyExporter(object):
     """
     A class for exporting recipes to an sql alchemy database.
@@ -5,15 +7,21 @@ class SQLAlchemyExporter(object):
     and use add_recipe to add Recipe objects to the database.
     """
 
-    def __init__(self, db, recipe_model, ingredients_model):
+    def __init__(self, db, recipe_model, ingredients_model, upload_image):
         self.db = db
         self.recipe_model = recipe_model
         self.ingredients_model = ingredients_model
+        self.upload_image = upload_image
 
     def add_recipe(self, recipe):
+        try:
+            image = self.upload_image(recipe.image_file)
+        except IOError:
+            log.error(
+                "Couldn't load image for recipe:{}".format(recipe.url))
+            image = None
         rmodel = self.recipe_model()
         for attrib in ('url',
-                       'image',
                        'name',
                        'author',
                        'recipe_yield',
@@ -27,8 +35,10 @@ class SQLAlchemyExporter(object):
         rmodel.ingredients = [
             self.ingredients_model(name=ingr) for
             ingr in recipe.ingredients]
+        rmodel.image = image
         self.db.session.add(rmodel)
         self.db.session.commit()
+
 
 
 def scrape_and_export(exporter, crawlers=[]):

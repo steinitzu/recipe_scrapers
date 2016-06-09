@@ -5,6 +5,7 @@ import requests
 import requests_cache
 from bs4 import BeautifulSoup
 from requests import HTTPError
+from requests.exceptions import InvalidSchema
 from requests.compat import urlencode, urljoin
 
 from .recipes import get_recipe, NoRecipeException, InsufficientDataException
@@ -37,37 +38,78 @@ class Request(object):
             raise HTTPError('404')
         return r.text
 
+    def get_file(self, url):
+        log.info('Getting file:{}'.format(url))
+        if requests_cache.get_cache().has_url(url):
+            pass
+        else:
+            time.sleep(randint(3, 5))
+        r = requests.get(url.strip(), stream=True)
+        if r.status_code == 404:
+            raise HTTPError('404')
+        return r.content
+
     def get_soup(self, url, **kwargs):
         html = self.get_html(url, **kwargs)
         return BeautifulSoup(html, 'lxml')
 
-    def _flat_crawl(self):
-        for link in self.get_links(self.base_url):
+    def _base_crawl(self, url):
+        links = self.get_links(url)
+        if not links:
+            log.warning(
+                'Page is empty, ending crawl. {}'.format(url))
+            # Hack to stop while loop in pagination crawl
+            raise HTTPError('Empty page')
+        for link in links:
             try:
-                yield get_recipe(self.get_soup(link), link)
+                recipe = get_recipe(self.get_soup(link), link)
             except (NoRecipeException, InsufficientDataException) as e:
                 log.error(e.message)
                 continue
+            try:
+                recipe.image_file = self.get_file(recipe.image)
+            except InvalidSchema as e:
+                log.error(e.message)
+                recipe.image_file = None
+            yield recipe
+
+    def _flat_crawl(self):
+        return self._base_crawl(self.base_url)
+        # for link in self.get_links(self.base_url):
+        #     try:
+        #         yield get_recipe(self.get_soup(link), link)
+        #     except (NoRecipeException, InsufficientDataException) as e:
+        #         log.error(e.message)
+        #         continue
 
     def _pagination_crawl(self):
         page = 1
         while True:
             url = self.page_url(page)
             try:
-                pagelinks = self.get_links(url)
+                for r in self._base_crawl(url):
+                    yield r
             except HTTPError:
                 break
-            if not pagelinks:
-                log.warning(
-                    'Page is empty, ending crawl. {}'.format(url))
-                break
-            for link in pagelinks:
-                try:
-                    yield get_recipe(self.get_soup(link), link)
-                except (NoRecipeException, InsufficientDataException) as e:
-                    log.error(e.message)
-                    continue
             page += 1
+
+
+
+            # try:
+            #     pagelinks = self.get_links(url)
+            # except HTTPError:
+            #     break
+            # if not pagelinks:
+            #     log.warning(
+            #         'Page is empty, ending crawl. {}'.format(url))
+            #     break
+            # for link in pagelinks:
+            #     try:
+            #         yield get_recipe(self.get_soup(link), link)
+            #     except (NoRecipeException, InsufficientDataException) as e:
+            #         log.error(e.message)
+            #         continue
+            # page += 1
 
 
 class MinimalistBakerCrawler(Request):
