@@ -68,7 +68,7 @@ class Request(object):
                 continue
             try:
                 recipe.image_file = self.get_file(recipe.image)
-            except InvalidSchema as e:
+            except (HTTPError, InvalidSchema) as e:
                 log.error(e.message)
                 recipe.image_file = None
             yield recipe

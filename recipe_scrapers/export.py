@@ -36,7 +36,7 @@ class SQLAlchemyExporter(object):
             self.ingredients_model(name=ingr) for
             ingr in recipe.ingredients]
         rmodel.image = image
-        self.db.session.add(rmodel)
+        self.db.session.merge(rmodel)
         self.db.session.commit()
 
 
