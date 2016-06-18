@@ -82,13 +82,18 @@ def get_recipe(soup, url):
     recipe = Recipe()
     recipe.url = url
 
-    img = soup.find_all(attrs={'itemprop': 'image'})[0]
+    recipe.name = soup.find(itemprop='name').text
+
+    try:
+        img = soup.find_all(attrs={'itemprop': 'image'})[0]
+    except IndexError:
+        article = bigsoup.find(itemprop='text')
+        img = article.find('img', class_=re.compile(r'wp-image-\w+'))
+
     for tag in ('src', 'srcset', 'content', 'href'):
         if tag in img.attrs:
             recipe.image = img.get(tag)
             break
-
-    recipe.name = soup.find(itemprop='name').text
 
     attrs = [(soup, {'itemprop': 'author'}),
              (bigsoup, {'property': re.compile('^(.*)author$')}),
@@ -116,9 +121,7 @@ def get_recipe(soup, url):
         recipe.recipe_yield = soup.find_all(
             attrs={'itemprop': 'recipeYield'})[0].text
     except IndexError:
-        raise InsufficientDataException(
-            'Recipe at {} is missing recipeYield field'.format(url))
-
+        log.warning('Recipe at {} is missing recipeYield field'.format(url))
 
     # TODO: Find another way to get category
     try:

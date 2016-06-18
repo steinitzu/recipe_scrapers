@@ -16,7 +16,8 @@ from recipe_scrapers.crawlers import (MinimalistBakerCrawler,
                                       CookieAndKateCrawler,
                                       NaturallyEllaCrawler,
                                       SweetPotatoSoulCrawler,
-                                      SeasonsAndSupperCrawler)
+                                      SeasonsAndSupperCrawler,
+                                      FoodHeavenMadeEasyCrawler)
 from recipe_scrapers import log, logging
 
 
@@ -26,11 +27,12 @@ def main():
         db.create_all()
     exporter = SQLAlchemyExporter(db, Recipe, Ingredient, upload_image)
     crawlers = [
-        MinimalistBakerCrawler(),
-        CookieAndKateCrawler(),
-        NaturallyEllaCrawler(),
-        SweetPotatoSoulCrawler(),
-        SeasonsAndSupperCrawler(),
+        # MinimalistBakerCrawler(),
+        # CookieAndKateCrawler(),
+        # NaturallyEllaCrawler(),
+        # SweetPotatoSoulCrawler(),
+        # SeasonsAndSupperCrawler(),
+        FoodHeavenMadeEasyCrawler(),
         ]
     scrape_and_export(exporter, crawlers)
 

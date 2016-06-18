@@ -32,7 +32,7 @@ class Request(object):
         if requests_cache.get_cache().has_url(url):
             pass
         else:
-            time.sleep(randint(5,20))
+            time.sleep(randint(3,6))
         r = requests.get(url)
         if r.status_code == 404:
             raise HTTPError('404')
@@ -202,6 +202,21 @@ class SeasonsAndSupperCrawler(Request):
         for cat in soup.find_all(class_='lcp_catlist'):
             for li in cat.find_all('li'):
                 links.append(li.find('a').get('href'))
+        return links
+
+    def crawl(self):
+        return self._flat_crawl()
+
+
+class FoodHeavenMadeEasyCrawler(Request):
+
+    base_url = 'http://www.foodheavenmadeeasy.com/recipes/'
+
+    def get_links(self, url):
+        links = []
+        soup = self.get_soup(url)
+        for cat in soup.find_all(class_='cat-list'):
+            links.append(cat.find('a').get('href'))
         return links
 
     def crawl(self):
