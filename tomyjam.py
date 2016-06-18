@@ -17,7 +17,8 @@ from recipe_scrapers.crawlers import (MinimalistBakerCrawler,
                                       NaturallyEllaCrawler,
                                       SweetPotatoSoulCrawler,
                                       SeasonsAndSupperCrawler,
-                                      FoodHeavenMadeEasyCrawler)
+                                      FoodHeavenMadeEasyCrawler,
+                                      LexisCleanKitchenCrawler)
 from recipe_scrapers import log, logging
 
 
@@ -27,28 +28,15 @@ def main():
         db.create_all()
     exporter = SQLAlchemyExporter(db, Recipe, Ingredient, upload_image)
     crawlers = [
-        # MinimalistBakerCrawler(),
-        # CookieAndKateCrawler(),
-        # NaturallyEllaCrawler(),
-        # SweetPotatoSoulCrawler(),
-        # SeasonsAndSupperCrawler(),
+        MinimalistBakerCrawler(),
+        CookieAndKateCrawler(),
+        NaturallyEllaCrawler(),
+        SweetPotatoSoulCrawler(),
+        SeasonsAndSupperCrawler(),
         FoodHeavenMadeEasyCrawler(),
+        LexisCleanKitchenCrawler(),
         ]
     scrape_and_export(exporter, crawlers)
-
-def get_all_images():
-    """
-    todo: do
-    make new column, image_id in recipe, foreign key to Image
-    for every recipe:
-        r = request.get(recipe.image, stream=True)
-        dbimage = myjam.file_mgmt.upload_image(r.content)
-        recipe.image = dbimage
-    """
-
-
-
-
 
 
 if __name__ == '__main__':

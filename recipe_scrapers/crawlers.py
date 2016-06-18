@@ -6,7 +6,7 @@ import requests_cache
 from bs4 import BeautifulSoup
 from requests import HTTPError
 from requests.exceptions import InvalidSchema
-from requests.compat import urlencode, urljoin
+from requests.compat import urlencode
 
 from .recipes import get_recipe, NoRecipeException, InsufficientDataException
 from . import log
@@ -75,12 +75,6 @@ class Request(object):
 
     def _flat_crawl(self):
         return self._base_crawl(self.base_url)
-        # for link in self.get_links(self.base_url):
-        #     try:
-        #         yield get_recipe(self.get_soup(link), link)
-        #     except (NoRecipeException, InsufficientDataException) as e:
-        #         log.error(e.message)
-        #         continue
 
     def _pagination_crawl(self):
         page = 1
@@ -92,24 +86,6 @@ class Request(object):
             except HTTPError:
                 break
             page += 1
-
-
-
-            # try:
-            #     pagelinks = self.get_links(url)
-            # except HTTPError:
-            #     break
-            # if not pagelinks:
-            #     log.warning(
-            #         'Page is empty, ending crawl. {}'.format(url))
-            #     break
-            # for link in pagelinks:
-            #     try:
-            #         yield get_recipe(self.get_soup(link), link)
-            #     except (NoRecipeException, InsufficientDataException) as e:
-            #         log.error(e.message)
-            #         continue
-            # page += 1
 
 
 class MinimalistBakerCrawler(Request):
@@ -222,6 +198,40 @@ class FoodHeavenMadeEasyCrawler(Request):
     def crawl(self):
         return self._flat_crawl()
 
+
+class LexisCleanKitchenCrawler(Request):
+    # TODO: Use this as a base for category crawler
+
+    base_url = 'http://lexiscleankitchen.com/recipes/'
+    _domain = 'http://lexiscleankitchen.com'
+    cat_base_url = 'http://lexiscleankitchen.com/category/'
+
+    def get_categories(self):
+        soup = self.get_soup(self.base_url)
+        links = []
+        for div in soup.find_all('div', class_='recipe_more'):
+            links.append(self._domain + div.find('a').get('href'))
+        return links
+
+    def page_url(self, page_no):
+        return self.cat_base_url + 'page/{}'.format(page_no)
+
+    def get_links(self, url):
+        links = []
+        soup = self.get_soup(url)
+        for div in soup.find_all(class_='post_title'):
+            links.append(div.find('a').get('href'))
+        return links
+
+    def crawl(self):
+        for category in self.get_categories():
+            self.cat_base_url = category
+            for recipe in self._pagination_crawl():
+                yield recipe
+
+
+
+# Bad crawlers below
 
 class PinchOfYumCrawler(Request):
     base_url = 'http://pinchofyum.com/recipes?'
