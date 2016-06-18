@@ -88,6 +88,35 @@ class Request(object):
             page += 1
 
 
+class BaseCrawler(Request):
+
+    # Where recipes or cats are listed
+    recipe_index_url = ''
+    # root domain usually
+    root_url = ''
+
+    def __init__(self):
+        Request.__init__(self)
+        self.get_links_args = ()
+        self.get_link_kwargs = {}
+        self.get_cats_args = ()
+        self.get_cats_kwargs = {}
+
+    @absolute_url
+    def get_categories(self):
+        for l in self.get_links(
+                self.index_url,
+                *self.get.cats_args,
+                **self.get_cats_kwargs):
+            yield l
+
+    @absolute_url
+    def get_links(self, url, *args, **kwargs):
+        soup = self.get_soup(url)
+        for div in soup.find_all(*args, **kwargs):
+            yield div.find('a').get('href')
+
+
 class MinimalistBakerCrawler(Request):
 
     base_url = 'http://minimalistbaker.com/recipes'
