@@ -1,5 +1,6 @@
 import time
 from random import randint
+import urllib2
 
 import requests
 import requests_cache
@@ -10,6 +11,10 @@ from requests.compat import urlencode
 
 from .recipes import get_recipe, NoRecipeException, InsufficientDataException
 from . import log
+
+
+urljoin = urllib2.urlparse.urljoin
+
 
 class EmptyPageError(Exception):
     pass
@@ -39,6 +44,7 @@ class Request(object):
         return r.text
 
     def get_file(self, url):
+        # TODO: Make sure is absolute url
         log.info('Getting file:{}'.format(url))
         if requests_cache.get_cache().has_url(url):
             pass
@@ -88,6 +94,18 @@ class Request(object):
             page += 1
 
 
+def absolute_urls(func):
+    def absolutify(*args, **kwargs):
+        self = args[0]
+        for url in func(*args, **kwargs):
+            if url.startswith('http://'):
+                yield url
+            else:
+                yield urljoin(self.root_url, url)
+    return absolutify
+
+
+
 class BaseCrawler(Request):
 
     # Where recipes or cats are listed
@@ -97,24 +115,147 @@ class BaseCrawler(Request):
 
     def __init__(self):
         Request.__init__(self)
-        self.get_links_args = ()
-        self.get_link_kwargs = {}
-        self.get_cats_args = ()
-        self.get_cats_kwargs = {}
+        # self.get_links_args = ()
+        # self.get_link_kwargs = {}
+        # self.get_cats_args = ()
+        # self.get_cats_kwargs = {}
 
-    @absolute_url
+    def page_url(self, page_no):
+        return self.recipe_index_url + '/page/{}'.format(page_no)
+
+    @absolute_urls
     def get_categories(self):
         for l in self.get_links(
-                self.index_url,
-                *self.get.cats_args,
+                self.recipe_index_url,
+                *self.get_cats_args,
                 **self.get_cats_kwargs):
             yield l
 
-    @absolute_url
+    @absolute_urls
     def get_links(self, url, *args, **kwargs):
+        """
+        *args and **kwargs will be passed to beautifulsoup
+        to find links in page.
+        """
+        log.info('getting links at:{}'.format(url))
         soup = self.get_soup(url)
         for div in soup.find_all(*args, **kwargs):
-            yield div.find('a').get('href')
+            link = div.find('a').get('href')
+            log.info('link:{}'.format(link))
+            yield link
+
+    def _base_crawl(self, url):
+        links = self.get_links(
+            url,
+            *self.get_links_args,
+            **self.get_links_kwargs)
+
+        if not links:
+            log.warning(
+                'Page is empty, ending crawl. {}'.format(url))
+            # Hack to stop while loop in pagination crawl
+            raise HTTPError('Empty page')
+        for link in links:
+            try:
+                recipe = get_recipe(self.get_soup(link), link)
+            except (NoRecipeException, InsufficientDataException) as e:
+                log.error(e.message)
+                continue
+            try:
+                recipe.image_file = self.get_file(recipe.image)
+            except (HTTPError, InvalidSchema) as e:
+                log.error(e.message)
+                recipe.image_file = None
+            yield recipe
+
+    def _pagination_crawl(self):
+        page = 1
+        while True:
+            url = self.page_url(page)
+            try:
+                for r in self._base_crawl(url):
+                    yield r
+            except HTTPError:
+                break
+            page += 1
+
+    def _flat_crawl(self):
+        return self._base_crawl(self.recipe_index_url)
+
+    def _category_crawl(self, paginate=True):
+        categories = self.get_categories()
+        crawlmethod = self._pagination_crawl if paginate else self._flat_crawl
+        for cat in categories:
+            self.recipe_index_url = cat
+            for r in crawlmethod():
+                yield r
+
+
+class MinimalistBakerCrawler2(BaseCrawler):
+
+    recipe_index_url = 'http://minimalistbaker.com/recipes'
+    root_url = 'http://minimalistbaker.com'
+
+    get_links_args = ('div', )
+    get_links_kwargs = {'class': 'entry-content'}
+
+    def __init__(self):
+        BaseCrawler.__init__(self)
+        self.crawl = self._pagination_crawl
+
+
+class CookieAndKateCrawler2(BaseCrawler):
+
+    root_url = 'http://cookieandkate.com'
+    recipe_index_url = 'http://cookieandkate.com/recipes'
+
+    get_links_args = ('div', )
+    get_links_kwargs = {'class': 'lcp_catlist_item'}
+
+    def __init__(self):
+        BaseCrawler.__init__(self)
+        self.crawl = self._flat_crawl
+
+
+class NaturallyEllaCrawler2(BaseCrawler):
+
+    base_url = 'http://naturallyella.com/recipes/?'
+    root_url = 'http://naturallyella.com'
+    recipe_index_url = 'http://naturallyella.com/recipes/?'
+
+    get_links_args = ('div', )
+    get_links_kwargs = {'class_': 'fm_recipe'}
+
+    def __init__(self):
+        BaseCrawler.__init__(self)
+        self.crawl = self._pagination_crawl
+
+    def page_url(self, page_no):
+        return self.recipe_index_url+urlencode((('sf_paged', page_no),))
+
+
+class LexisCleanKitchenCrawler2(BaseCrawler):
+    # TODO: Use this as a base for category crawler
+
+    recipe_index_url = 'http://lexiscleankitchen.com/recipes/'
+    root_url = 'http://lexiscleankitchen.com'
+    #cat_base_url = 'http://lexiscleankitchen.com/category/'
+
+    get_links_args = ()
+    get_links_kwargs = {'class_': 'post_title'}
+    get_cats_args = ('div', )
+    get_cats_kwargs = {'class_': 'recipe_more'}
+
+    def crawl(self):
+        for r in self._category_crawl(paginate=True):
+            yield r
+
+
+
+
+
+
+
 
 
 class MinimalistBakerCrawler(Request):
