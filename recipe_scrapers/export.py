@@ -2,6 +2,16 @@ from . import log
 
 from sqlalchemy import exists
 
+
+class Exporter(object):
+
+    def exists(self, url):
+        raise NotImplementedError
+
+    def add(self, recipe):
+        raise NotImplementedError
+
+
 class SQLAlchemyExporter(object):
     """
     A class for exporting recipes to an sql alchemy database.
@@ -15,19 +25,19 @@ class SQLAlchemyExporter(object):
         self.ingredients_model = ingredients_model
         self.upload_image = upload_image
 
-    def row_exists(self, model_class, field, value):
+    def exists(self, url):
         return self.db.session.query(exists().where(
-            getattr(model_class, field) == value)).scalar()
+            self.recipe_model.url == url)).scalar()
 
-    def add_recipe(self, recipe):
-        print log.info('Adding recipe {} to db'.format(recipe.url))
+    def add(self, recipe):
+        log.info('Adding recipe {} to db'.format(recipe.url))
         try:
             image = self.upload_image(recipe.image_file)
         except IOError:
             log.error(
                 "Couldn't load image for recipe:{}".format(recipe.url))
             image = None
-        if self.row_exists(self.recipe_model, 'url', recipe.url):
+        if self.exists(recipe.url):
             return
         rmodel = self.recipe_model()
         for attrib in ('url',
@@ -48,7 +58,9 @@ class SQLAlchemyExporter(object):
         self.db.session.merge(rmodel)
         self.db.session.commit()
 
+
 def scrape_and_export(exporter, crawlers=[]):
+    crawlers = [c(exporter) for c in crawlers]
     for crawler in crawlers:
         for recipe in crawler.crawl():
-            exporter.add_recipe(recipe)
+            exporter.add(recipe)

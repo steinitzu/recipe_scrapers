@@ -27,71 +27,35 @@ class Request(object):
     def __init__(self):
         requests_cache.install_cache()
 
+    def get(self, url):
+        if not url.startswith('http://'):
+            url = urljoin(self.root_url, url)
+        if requests_cache.get_cache().has_url(url):
+            pass
+        else:
+            time.sleep(randint(3, 6))
+        r = requests.get(url)
+        log.info('Status code:{}'.format(r.status_code))
+        if r.status_code == 404:
+            raise HTTPError('404')
+        return r
+
     def get_html(self, url):
         """
         Return the html for a web url.
         Raises HTTPError('404') if page is not found.
         """
         log.info('Fetching page: {}'.format(url))
-        # Give 5 seconds between requests
-        if requests_cache.get_cache().has_url(url):
-            pass
-        else:
-            time.sleep(randint(3,6))
-        r = requests.get(url)
-        if r.status_code == 404:
-            raise HTTPError('404')
-        return r.text
+        return self.get(url).text
 
     def get_file(self, url):
         # TODO: Make sure is absolute url
         log.info('Getting file:{}'.format(url))
-        if requests_cache.get_cache().has_url(url):
-            pass
-        else:
-            time.sleep(randint(3, 5))
-        r = requests.get(url.strip(), stream=True)
-        if r.status_code == 404:
-            raise HTTPError('404')
-        return r.content
+        return self.get(url).content
 
     def get_soup(self, url, **kwargs):
         html = self.get_html(url, **kwargs)
         return BeautifulSoup(html, 'lxml')
-
-    def _base_crawl(self, url):
-        links = self.get_links(url)
-        if not links:
-            log.warning(
-                'Page is empty, ending crawl. {}'.format(url))
-            # Hack to stop while loop in pagination crawl
-            raise HTTPError('Empty page')
-        for link in links:
-            try:
-                recipe = get_recipe(self.get_soup(link), link)
-            except (NoRecipeException, InsufficientDataException) as e:
-                log.error(e.message)
-                continue
-            try:
-                recipe.image_file = self.get_file(recipe.image)
-            except (HTTPError, InvalidSchema) as e:
-                log.error(e.message)
-                recipe.image_file = None
-            yield recipe
-
-    def _flat_crawl(self):
-        return self._base_crawl(self.base_url)
-
-    def _pagination_crawl(self):
-        page = 1
-        while True:
-            url = self.page_url(page)
-            try:
-                for r in self._base_crawl(url):
-                    yield r
-            except HTTPError:
-                break
-            page += 1
 
 
 def absolute_urls(func):
@@ -101,9 +65,9 @@ def absolute_urls(func):
             if url.startswith('http://'):
                 yield url
             else:
-                yield urljoin(self.root_url, url)
+                yield urljoin(self.root_url,
+                              url.strip('/'))
     return absolutify
-
 
 
 class BaseCrawler(Request):
@@ -113,12 +77,16 @@ class BaseCrawler(Request):
     # root domain usually
     root_url = ''
 
-    def __init__(self):
+    def __init__(self, exporter):
         Request.__init__(self)
-        # self.get_links_args = ()
-        # self.get_link_kwargs = {}
-        # self.get_cats_args = ()
-        # self.get_cats_kwargs = {}
+        self.exporter = exporter
+        self.init()
+
+    def init(self):
+        self.get_links_args = ()
+        self.get_links_kwargs = {}
+        self.get_cats_args = ()
+        self.get_cats_kwargs = {}
 
     def page_url(self, page_no):
         return self.recipe_index_url + '/page/{}'.format(page_no)
@@ -144,18 +112,22 @@ class BaseCrawler(Request):
             log.info('link:{}'.format(link))
             yield link
 
+    def export(self, recipe):
+        self.exporter.add(recipe)
+
+    def exists(self, url):
+        return self.exporter.exists(url)
+
     def _base_crawl(self, url):
+        log.info('Get links kwargs:{}'.format(
+            self.get_links_kwargs))
         links = self.get_links(
             url,
             *self.get_links_args,
             **self.get_links_kwargs)
-
-        if not links:
-            log.warning(
-                'Page is empty, ending crawl. {}'.format(url))
-            # Hack to stop while loop in pagination crawl
-            raise HTTPError('Empty page')
         for link in links:
+            if self.exists(link):
+                continue
             try:
                 recipe = get_recipe(self.get_soup(link), link)
             except (NoRecipeException, InsufficientDataException) as e:
@@ -170,14 +142,24 @@ class BaseCrawler(Request):
 
     def _pagination_crawl(self):
         page = 1
+        recipes_in_page = 0
         while True:
             url = self.page_url(page)
             try:
                 for r in self._base_crawl(url):
+                    recipes_in_page += 1
                     yield r
             except HTTPError:
+                log.warning(
+                    'Got 404, ending pagination crawl. {}'.format(url))
                 break
-            page += 1
+            if recipes_in_page:
+                page += 1
+                recipes_in_page = 0
+            else:
+                log.warning(
+                    'No links found, ending pagination crawl. {}'.format(url))
+                break
 
     def _flat_crawl(self):
         return self._base_crawl(self.recipe_index_url)
@@ -186,218 +168,159 @@ class BaseCrawler(Request):
         categories = self.get_categories()
         crawlmethod = self._pagination_crawl if paginate else self._flat_crawl
         for cat in categories:
-            self.recipe_index_url = cat
+            self.recipe_index_url = cat.strip('/')
             for r in crawlmethod():
+
                 yield r
 
 
-class MinimalistBakerCrawler2(BaseCrawler):
+class MinimalistBakerCrawler(BaseCrawler):
 
     recipe_index_url = 'http://minimalistbaker.com/recipes'
     root_url = 'http://minimalistbaker.com'
 
-    get_links_args = ('div', )
-    get_links_kwargs = {'class': 'entry-content'}
 
-    def __init__(self):
-        BaseCrawler.__init__(self)
+
+    # def __init__(self, *args, **kwargs):
+    #     BaseCrawler.__init__(self, *args, **kwargs)
+
+
+    def init(self):
+        self.get_links_args = ('div', )
+        self.get_links_kwargs = {'class_': 'entry-content'}
         self.crawl = self._pagination_crawl
 
 
-class CookieAndKateCrawler2(BaseCrawler):
+class CookieAndKateCrawler(BaseCrawler):
 
     root_url = 'http://cookieandkate.com'
     recipe_index_url = 'http://cookieandkate.com/recipes'
 
-    get_links_args = ('div', )
-    get_links_kwargs = {'class': 'lcp_catlist_item'}
+    # def __init__(self, *args, **kwargs):
+    #     BaseCrawler.__init__(self, *args, **kwargs)
 
-    def __init__(self):
-        BaseCrawler.__init__(self)
+
+    def init(self):
+        self.get_links_args = ('div', )
+        self.get_links_kwargs = {'class': 'lcp_catlist_item'}
         self.crawl = self._flat_crawl
 
 
-class NaturallyEllaCrawler2(BaseCrawler):
+class NaturallyEllaCrawler(BaseCrawler):
 
-    base_url = 'http://naturallyella.com/recipes/?'
     root_url = 'http://naturallyella.com'
     recipe_index_url = 'http://naturallyella.com/recipes/?'
 
-    get_links_args = ('div', )
-    get_links_kwargs = {'class_': 'fm_recipe'}
+    # def __init__(self, *args, **kwargs):
+    #     BaseCrawler.__init__(self, *args, **kwargs)
+    #     self.crawl = self._pagination_crawl
 
-    def __init__(self):
-        BaseCrawler.__init__(self)
+    def init(self):
+        self.get_links_args = ('div', )
+        self.get_links_kwargs = {'class_': 'fm_recipe'}
         self.crawl = self._pagination_crawl
 
     def page_url(self, page_no):
         return self.recipe_index_url+urlencode((('sf_paged', page_no),))
 
 
-class LexisCleanKitchenCrawler2(BaseCrawler):
+class LexisCleanKitchenCrawler(BaseCrawler):
     # TODO: Use this as a base for category crawler
 
-    recipe_index_url = 'http://lexiscleankitchen.com/recipes/'
+    recipe_index_url = 'http://lexiscleankitchen.com/recipes'
     root_url = 'http://lexiscleankitchen.com'
-    #cat_base_url = 'http://lexiscleankitchen.com/category/'
 
-    get_links_args = ()
-    get_links_kwargs = {'class_': 'post_title'}
-    get_cats_args = ('div', )
-    get_cats_kwargs = {'class_': 'recipe_more'}
+    def init(self):
+        self.get_links_args = ()
+        self.get_links_kwargs = {'class_': 'post_title'}
+        self.get_cats_args = ('div', )
+        self.get_cats_kwargs = {'class_': 'recipe_more'}
+
+    # def get_categories(self):
+    #     return ['http://lexiscleankitchen.com/category/smoothies-2/']
 
     def crawl(self):
         for r in self._category_crawl(paginate=True):
             yield r
 
 
+class SweetPotatoSoulCrawler(BaseCrawler):
+    recipe_index_url = 'http://sweetpotatosoul.com/recipes'
+    root_url = 'http://sweetpotatosoul.com/recipes'
+
+    # def __init__(self, *args, **kwargs):
+    #     BaseCrawler.__init__(self, *args, **kwargs)
+
+    def init(self):
+        self.get_links_args = ('div', )
+        self.get_links_kwargs = {'class_': 'recipe'}
+        self.crawl = self._flat_crawl
 
 
+class SeasonsAndSupperCrawler(BaseCrawler):
 
+    recipe_index_url = 'http://www.seasonsandsuppers.ca/recipe-index-category'
+    recipe_index_url = 'http://www.seasonsandsuppers.ca'
 
+    # def __init__(self, *args, **kwargs):
+    #     BaseCrawler.__init__(self, *args, **kwargs)
+    #     self.crawl = self._flat_crawl
 
+    def init(self):
+        self.crawl = self._flat_crawl
 
-
-class MinimalistBakerCrawler(Request):
-
-    base_url = 'http://minimalistbaker.com/recipes'
-
-    def page_url(self, page_no):
-        return self.base_url + '/page/{}'.format(page_no)
-
-    def get_links(self, url):
-        """
-        Return all recipe links on page.
-        """
-        links = []
+    def get_links(self, url, *args, **kwargs):
         soup = self.get_soup(url)
-
-        recipe_divs = soup.findAll('div', {'class': 'entry-content'})
-        for div in recipe_divs:
-            url = div.find_all('a')[0].get('href')
-            links.append(url)
-        return links
-
-    def crawl(self):
-        return self._pagination_crawl()
-
-
-class CookieAndKateCrawler(Request):
-
-    base_url = 'http://cookieandkate.com/recipes/'
-
-    def get_links(self, url):
-        links = []
-        soup = self.get_soup(url)
-        recipe_divs = soup.findAll('div', {'class': 'lcp_catlist_item'})
-        for div in recipe_divs:
-            url = div.find_all('a')[0].get('href')
-            links.append(url)
-        return links
-
-    def crawl(self):
-        return self._flat_crawl()
-
-
-class NaturallyEllaCrawler(Request):
-
-    base_url = 'http://naturallyella.com/recipes/?'
-
-    def page_url(self, page_no):
-        return self.base_url+urlencode((('sf_paged', page_no),))
-
-    def get_links(self, url):
-        links = []
-        soup = self.get_soup(url)
-        recipe_divs = soup.find_all('div', {'class': 'fm_recipe'})
-        for div in recipe_divs:
-            url = div.find_all('a')[0].get('href')
-            links.append(url)
-        return links
-
-    def crawl(self):
-        return self._pagination_crawl()
-
-
-class SweetPotatoSoulCrawler(Request):
-
-    base_url = 'http://sweetpotatosoul.com/recipes'
-
-    def get_links(self, url):
-        links = []
-        soup = self.get_soup(url)
-        recipe_divs = soup.find_all('div', {'class': 'recipe'})
-        for div in recipe_divs:
-            # TODO: category could be div.get('class')[1]
-            url = div.find_all('a')[0].get('href')
-            links.append(url)
-        return links
-
-    def crawl(self):
-        return self._flat_crawl()
-
-
-class SeasonsAndSupperCrawler(Request):
-
-    base_url = 'http://www.seasonsandsuppers.ca/recipe-index-category/'
-
-    def get_links(self, url):
-        links = []
-        soup = self.get_soup(url)
-
         for cat in soup.find_all(class_='lcp_catlist'):
             for li in cat.find_all('li'):
-                links.append(li.find('a').get('href'))
-        return links
+                yield li.find('a').get('href')
+# class SeasonsAndSupperCrawler(Request):
 
-    def crawl(self):
-        return self._flat_crawl()
+#     base_url = 'http://www.seasonsandsuppers.ca/recipe-index-category/'
 
+#     def get_links(self, url):
+#         links = []
+#         soup = self.get_soup(url)
 
-class FoodHeavenMadeEasyCrawler(Request):
+#         for cat in soup.find_all(class_='lcp_catlist'):
+#             for li in cat.find_all('li'):
+#                 links.append(li.find('a').get('href'))
+#         return links
 
-    base_url = 'http://www.foodheavenmadeeasy.com/recipes/'
-
-    def get_links(self, url):
-        links = []
-        soup = self.get_soup(url)
-        for cat in soup.find_all(class_='cat-list'):
-            links.append(cat.find('a').get('href'))
-        return links
-
-    def crawl(self):
-        return self._flat_crawl()
+#     def crawl(self):
+#         return self._flat_crawl()
 
 
-class LexisCleanKitchenCrawler(Request):
-    # TODO: Use this as a base for category crawler
+class FoodHeavenMadeEasyCrawler(BaseCrawler):
 
-    base_url = 'http://lexiscleankitchen.com/recipes/'
-    _domain = 'http://lexiscleankitchen.com'
-    cat_base_url = 'http://lexiscleankitchen.com/category/'
+    recipe_index_url = 'http://www.foodheavenmadeeasy.com/recipes'
+    root_url = 'http://www.foodheavenmadeeasy.com'
 
-    def get_categories(self):
-        soup = self.get_soup(self.base_url)
-        links = []
-        for div in soup.find_all('div', class_='recipe_more'):
-            links.append(self._domain + div.find('a').get('href'))
-        return links
+    # def __init__(self, *args, **kwargs):
+    #     BaseCrawler.__init__(self, *args, **kwargs)
+    #     self.crawl = self._flat_crawl
 
-    def page_url(self, page_no):
-        return self.cat_base_url + 'page/{}'.format(page_no)
+    def init(self):
+        self.get_links_kwargs = {'class_': 'cat-list'}
+        self.crawl = self._flat_crawl
 
-    def get_links(self, url):
-        links = []
-        soup = self.get_soup(url)
-        for div in soup.find_all(class_='post_title'):
-            links.append(div.find('a').get('href'))
-        return links
 
-    def crawl(self):
-        for category in self.get_categories():
-            self.cat_base_url = category
-            for recipe in self._pagination_crawl():
-                yield recipe
+
+# class FoodHeavenMadeEasyCrawler(Request):
+
+#     base_url = 'http://www.foodheavenmadeeasy.com/recipes/'
+
+#     def get_links(self, url):
+#         links = []
+#         soup = self.get_soup(url)
+#         for cat in soup.find_all(class_='cat-list'):
+#             links.append(cat.find('a').get('href'))
+#         return links
+
+#     def crawl(self):
+#         return self._flat_crawl()
+
+
 
 
 
