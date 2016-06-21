@@ -161,7 +161,13 @@ def time_setter(itemprop, attribute, recipe, soup):
     thetime = t.get('datetime', t.get('content'))
     if not thetime:
         thetime = t.find(class_='value-title').get('title')
-    setattr(recipe, attribute, thetime)
+    try:
+        setattr(recipe, attribute, thetime)
+    except ISO8601Error:
+        log.error('Value: "{}" not usabla as an IO8601 duration.'.format(
+            thetime))
+        log.warning('No {} itemprop on recipe {}'.format(
+            itemprop, recipe.url))
     # try:
     #     setattr(recipe, attribute, t.get('datetime'))
     # except ISO8601Error:
