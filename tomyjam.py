@@ -12,14 +12,7 @@ from myjam import db
 from myjam.models import Recipe, Ingredient
 from myjam.file_mgmt import upload_image
 from recipe_scrapers.export import SQLAlchemyExporter, scrape_and_export
-from recipe_scrapers.crawlers import (MinimalistBakerCrawler,
-                                      CookieAndKateCrawler,
-                                      NaturallyEllaCrawler,
-                                      SweetPotatoSoulCrawler,
-                                      SeasonsAndSupperCrawler,
-                                      FoodHeavenMadeEasyCrawler,
-                                      LexisCleanKitchenCrawler,
-)
+from recipe_scrapers.crawlers import get_crawlers
 from recipe_scrapers import log, logging
 
 
@@ -28,16 +21,7 @@ def main():
         db.drop_all()
         db.create_all()
     exporter = SQLAlchemyExporter(db, Recipe, Ingredient, upload_image)
-    crawlers = [
-        LexisCleanKitchenCrawler,
-        SweetPotatoSoulCrawler,
-        MinimalistBakerCrawler,
-        NaturallyEllaCrawler,
-        CookieAndKateCrawler,
-        FoodHeavenMadeEasyCrawler,
-        SeasonsAndSupperCrawler,
-
-    ]
+    crawlers = get_crawlers()
 
 
     scrape_and_export(exporter, crawlers)

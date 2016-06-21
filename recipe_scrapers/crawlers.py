@@ -80,13 +80,18 @@ class BaseCrawler(Request):
     def __init__(self, exporter):
         Request.__init__(self)
         self.exporter = exporter
-        self.init()
-
-    def init(self):
         self.get_links_args = ()
         self.get_links_kwargs = {}
         self.get_cats_args = ()
         self.get_cats_kwargs = {}
+        self.init()
+
+    def init(self):
+        """
+        Override in subclass, called at end of __init__.
+        Use to instantiate instance variables, etc.
+        """
+        pass
 
     def page_url(self, page_no):
         return self.recipe_index_url + '/page/{}'.format(page_no)
@@ -170,7 +175,6 @@ class BaseCrawler(Request):
         for cat in categories:
             self.recipe_index_url = cat.strip('/')
             for r in crawlmethod():
-
                 yield r
 
 
@@ -178,12 +182,6 @@ class MinimalistBakerCrawler(BaseCrawler):
 
     recipe_index_url = 'http://minimalistbaker.com/recipes'
     root_url = 'http://minimalistbaker.com'
-
-
-
-    # def __init__(self, *args, **kwargs):
-    #     BaseCrawler.__init__(self, *args, **kwargs)
-
 
     def init(self):
         self.get_links_args = ('div', )
@@ -196,10 +194,6 @@ class CookieAndKateCrawler(BaseCrawler):
     root_url = 'http://cookieandkate.com'
     recipe_index_url = 'http://cookieandkate.com/recipes'
 
-    # def __init__(self, *args, **kwargs):
-    #     BaseCrawler.__init__(self, *args, **kwargs)
-
-
     def init(self):
         self.get_links_args = ('div', )
         self.get_links_kwargs = {'class': 'lcp_catlist_item'}
@@ -211,10 +205,6 @@ class NaturallyEllaCrawler(BaseCrawler):
     root_url = 'http://naturallyella.com'
     recipe_index_url = 'http://naturallyella.com/recipes/?'
 
-    # def __init__(self, *args, **kwargs):
-    #     BaseCrawler.__init__(self, *args, **kwargs)
-    #     self.crawl = self._pagination_crawl
-
     def init(self):
         self.get_links_args = ('div', )
         self.get_links_kwargs = {'class_': 'fm_recipe'}
@@ -225,7 +215,6 @@ class NaturallyEllaCrawler(BaseCrawler):
 
 
 class LexisCleanKitchenCrawler(BaseCrawler):
-    # TODO: Use this as a base for category crawler
 
     recipe_index_url = 'http://lexiscleankitchen.com/recipes'
     root_url = 'http://lexiscleankitchen.com'
@@ -236,9 +225,6 @@ class LexisCleanKitchenCrawler(BaseCrawler):
         self.get_cats_args = ('div', )
         self.get_cats_kwargs = {'class_': 'recipe_more'}
 
-    # def get_categories(self):
-    #     return ['http://lexiscleankitchen.com/category/smoothies-2/']
-
     def crawl(self):
         for r in self._category_crawl(paginate=True):
             yield r
@@ -247,9 +233,6 @@ class LexisCleanKitchenCrawler(BaseCrawler):
 class SweetPotatoSoulCrawler(BaseCrawler):
     recipe_index_url = 'http://sweetpotatosoul.com/recipes'
     root_url = 'http://sweetpotatosoul.com/recipes'
-
-    # def __init__(self, *args, **kwargs):
-    #     BaseCrawler.__init__(self, *args, **kwargs)
 
     def init(self):
         self.get_links_args = ('div', )
@@ -260,11 +243,7 @@ class SweetPotatoSoulCrawler(BaseCrawler):
 class SeasonsAndSupperCrawler(BaseCrawler):
 
     recipe_index_url = 'http://www.seasonsandsuppers.ca/recipe-index-category'
-    recipe_index_url = 'http://www.seasonsandsuppers.ca'
-
-    # def __init__(self, *args, **kwargs):
-    #     BaseCrawler.__init__(self, *args, **kwargs)
-    #     self.crawl = self._flat_crawl
+    root_url = 'http://www.seasonsandsuppers.ca'
 
     def init(self):
         self.crawl = self._flat_crawl
@@ -274,21 +253,6 @@ class SeasonsAndSupperCrawler(BaseCrawler):
         for cat in soup.find_all(class_='lcp_catlist'):
             for li in cat.find_all('li'):
                 yield li.find('a').get('href')
-# class SeasonsAndSupperCrawler(Request):
-
-#     base_url = 'http://www.seasonsandsuppers.ca/recipe-index-category/'
-
-#     def get_links(self, url):
-#         links = []
-#         soup = self.get_soup(url)
-
-#         for cat in soup.find_all(class_='lcp_catlist'):
-#             for li in cat.find_all('li'):
-#                 links.append(li.find('a').get('href'))
-#         return links
-
-#     def crawl(self):
-#         return self._flat_crawl()
 
 
 class FoodHeavenMadeEasyCrawler(BaseCrawler):
@@ -296,32 +260,36 @@ class FoodHeavenMadeEasyCrawler(BaseCrawler):
     recipe_index_url = 'http://www.foodheavenmadeeasy.com/recipes'
     root_url = 'http://www.foodheavenmadeeasy.com'
 
-    # def __init__(self, *args, **kwargs):
-    #     BaseCrawler.__init__(self, *args, **kwargs)
-    #     self.crawl = self._flat_crawl
-
     def init(self):
         self.get_links_kwargs = {'class_': 'cat-list'}
         self.crawl = self._flat_crawl
 
 
+class SkinnyTasteCrawler(BaseCrawler):
+    root_url = 'http://www.skinnytaste.com'
+    recipe_index_url = 'http://www.skinnytaste.com/recipes'
 
-# class FoodHeavenMadeEasyCrawler(Request):
-
-#     base_url = 'http://www.foodheavenmadeeasy.com/recipes/'
-
-#     def get_links(self, url):
-#         links = []
-#         soup = self.get_soup(url)
-#         for cat in soup.find_all(class_='cat-list'):
-#             links.append(cat.find('a').get('href'))
-#         return links
-
-#     def crawl(self):
-#         return self._flat_crawl()
+    def init(self):
+        self.get_links_args = ('div', )
+        self.get_links_kwargs = {'class_': 'archive-post'}
+        self.crawl = self._pagination_crawl
 
 
+class DamnDeliciousCrawler(BaseCrawler):
+    root_url = 'http://damndelicious.net'
+    recipe_index_url = 'http://damndelicious.net/recipe-index'
 
+    def init(self):
+        self.get_cats_args = ('div', )
+        self.get_cats_kwargs = {'class_': 'archive-post'}
+        self.get_links_args = ('div', )
+        self.get_links_kwargs = {'class_': 'archive-post'}
+        self.crawl = self._category_crawl
+
+
+
+def get_crawlers():
+    return BaseCrawler.__subclasses__()
 
 
 # Bad crawlers below

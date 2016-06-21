@@ -151,14 +151,19 @@ def get_recipe(soup, url):
 
 
 def time_setter(itemprop, attribute, recipe, soup):
-    t = soup.find_all(attrs={'itemprop': itemprop})
-    if t:
-        t = t[0]
-        try:
-            setattr(recipe, attribute, t.get('datetime'))
-        except ISO8601Error:
-            t = t.find_all(attrs={'class': 'value-title'})
-            setattr(recipe, attribute, t[0].get('title'))
-    else:
+    t = soup.find(attrs={'itemprop': itemprop})
+    if not t:
         log.warning('No {} itemprop on recipe {}'.format(
             itemprop, recipe.url))
+        return
+
+    # SkinnyTaste has timestamp in 'content' attribute
+    thetime = t.get('datetime', t.get('content'))
+    if not thetime:
+        thetime = t.find(class_='value-title').get('title')
+    setattr(recipe, attribute, thetime)
+    # try:
+    #     setattr(recipe, attribute, t.get('datetime'))
+    # except ISO8601Error:
+    #     t = t.find_all(attrs={'class': 'value-title'})
+    #     setattr(recipe, attribute, t[0].get('title'))
