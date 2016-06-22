@@ -3,6 +3,7 @@ from random import randint
 import urllib2
 import re
 
+from isodate import ISO8601Error
 import requests
 import requests_cache
 from bs4 import BeautifulSoup
@@ -10,7 +11,8 @@ from requests import HTTPError
 from requests.exceptions import InvalidSchema
 from requests.compat import urlencode
 
-from .recipes import get_recipe, NoRecipeException, InsufficientDataException
+from .recipes import NoRecipeException, InsufficientDataException, Recipe
+
 from . import log
 
 
@@ -56,6 +58,8 @@ class Request(object):
 
     def get_soup(self, url, **kwargs):
         html = self.get_html(url, **kwargs)
+        soup = BeautifulSoup(html, 'lxml')
+        soup.url = url
         return BeautifulSoup(html, 'lxml')
 
 
@@ -97,6 +101,68 @@ class BaseCrawler(Request):
     def page_url(self, page_no):
         return self.recipe_index_url + '/page/{}'.format(page_no)
 
+    def has_recipe(self, soup):
+        r = soup.find(itemtype='http://schema.org/Recipe')
+        return True if r else False
+
+    def get_recipe(self, soup):
+        recipe = Recipe()
+        recipe.url = url = soup.url
+        rsoup = soup.find(itemtype='http://schema.org/Recipe')
+
+        recipe.name = rsoup.find(itemprop='name').text
+
+        recipe.author = rsoup.find(itemprop='author').text
+
+        recipe.image = rsoup.find(itemprop='image')['src']
+
+        recipe.ingredients = [i.text for i in rsoup.find_all(
+            itemprprop='ingredients')]
+
+        # Nullable attributes
+        try:
+            recipe.recipe_yield = rsoup.find(itemprop='recipeYield').text
+        except AttributeError:
+            log.warning('Recipe at {} is missing recipeYield field'.format(
+                recipe.url))
+
+        try:
+            recipe.recipe_category = rsoup.find(itemprop='recipeCategory').text
+        except AttributeError:
+            log.warning(
+                'No category found for recipe:{}'.format(url))
+
+        try:
+            recipe.recipe_cuisine = rsoup.find(itemprop='recipeCuisine').text
+        except AttributeError:
+            log.warning(
+                'No cuisine property found for recipe:{}'.format(url))
+
+        def set_time(itemprop, attribute, recipe, rsoup):
+            t = rsoup.find(itemprop=itemprop)
+            if not t:
+                log.warning('No {} property on recipe {}'.format(
+                    itemprop, recipe.url))
+                return
+            thetime = t['datetime']
+            setattr(recipe, attribute, thetime)
+
+        try:
+            set_time('cookTime', 'cook_time', recipe, rsoup)
+        except ISO8601Error as e:
+            log.error('Recipe {}: {}'.format(url, e.message))
+        try:
+            set_time('prepTime', 'prep_time', recipe, rsoup)
+        except ISO8601Error as e:
+            log.error('Recipe {}: {}'.format(url, e.message))
+        try:
+            set_time('totalTime', 'total_time', recipe, rsoup)
+        except ISO8601Error as e:
+            log.error('Recipe {}: {}'.format(url, e.message))
+
+        return recipe
+
+
     @absolute_urls
     def get_categories(self):
         for l in self.get_links(
@@ -127,6 +193,7 @@ class BaseCrawler(Request):
     def get_soup(self, url, **kwargs):
         html = self.get_html(url, **kwargs)
         soup = BeautifulSoup(html, 'lxml')
+        soup.url = url
         recipe = soup.find(itemtype='http://schema.org/Recipe')
         if recipe:
             return self.fix_soup(soup)
@@ -158,18 +225,32 @@ class BaseCrawler(Request):
                 log.info('Ignoring existing recipe:"{}"'.format(link))
                 recipe = None
                 #continue
-            try:
-                recipe = get_recipe(self.get_soup(link), link)
-            except (NoRecipeException, InsufficientDataException) as e:
-                log.error(e.message)
-                recipe = None
-                #continue
-            else:
+            soup = self.get_soup(link)
+            if self.has_recipe(soup):
+                recipe = self.get_recipe(soup)
                 try:
                     recipe.image_file = self.get_file(recipe.image)
                 except (HTTPError, InvalidSchema) as e:
                     log.error(e.message)
                     recipe.image_file = None
+            else:
+                log.error('No recipe at:{}'.format(link))
+                recipe = None
+
+            # try:
+
+            #     recipe = self.get_recipe(soup)
+            #     #recipe = get_recipe(self.get_soup(link), link)
+            # except (NoRecipeException, InsufficientDataException) as e:
+            #     log.error(e.message)
+            #     recipe = None
+            #     #continue
+            # else:
+            #     try:
+            #         recipe.image_file = self.get_file(recipe.image)
+            #     except (HTTPError, InvalidSchema) as e:
+            #         log.error(e.message)
+            #         recipe.image_file = None
             yield recipe
 
     def _pagination_crawl(self):
@@ -240,6 +321,10 @@ class CookieAndKateCrawler(BaseCrawler):
         self.get_links_args = ('div', )
         self.get_links_kwargs = {'class': 'lcp_catlist_item'}
         self.crawl = self._flat_crawl
+
+    def fix_soup(self, soup):
+        # TODO: set img src to img href for itemprop='image'
+        return soup
 
 
 class NaturallyEllaCrawler(BaseCrawler):
@@ -330,6 +415,22 @@ class SkinnyTasteCrawler(BaseCrawler):
         self.get_links_kwargs = {'class_': 'archive-post'}
         self.crawl = self._pagination_crawl
 
+    def fix_soup(self, soup):
+        if not self.has_recipe(soup):
+            return soup
+        rsoup = soup.find(itemtype='http://schema.org/Recipe')
+        if rsoup.find(itemprop='author'):
+            return soup
+        nt = soup.new_tag('div', itemprop='author')
+        nt.string = 'Skinnytaste'
+        rsoup.insert(3, nt)
+
+        for attr in ('totalTime', 'cookTime', 'prepTime'):
+            tag = rsoup.find(itemprop=attr)
+            if not tag:
+                continue
+            tag['datetime'] = tag['content']
+        return soup
 
 class DamnDeliciousCrawler(BaseCrawler):
     root_url = 'http://damndelicious.net'

@@ -1,5 +1,6 @@
 import sys
 import os
+from collections import OrderedDict
 
 thisdir = os.path.dirname(os.path.realpath(__file__))
 myjamdir = os.path.realpath(
@@ -21,10 +22,10 @@ def main():
         db.drop_all()
         db.create_all()
     exporter = SQLAlchemyExporter(db, Recipe, Ingredient, upload_image)
-    crawlers = get_crawlers()
+    crawlers = OrderedDict(sorted(get_crawlers().items())).values()
 
     scrape_and_export(exporter,
-                      *crawlers.values())
+                      *crawlers)
                       #crawlers['DamnDelicious'])
 
 

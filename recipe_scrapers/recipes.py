@@ -63,9 +63,6 @@ class Recipe(object):
         self._time_setter('_total_time', value)
 
 
-
-
-
 def get_recipe(soup, url):
     """
     Given a BeautifulSoup object, finds a hrecipe by
@@ -85,11 +82,7 @@ def get_recipe(soup, url):
     recipe.name = soup.find(itemprop='name').text
 
     img = soup.find(itemprop='image')
-    # try:
-    #     img = soup.find_all(attrs={'itemprop': 'image'})[0]
-    # except IndexError:
-    #     article = bigsoup.find('article', class_='post')
-    #     img = article.find('img', class_=re.compile(r'wp-image-\w+'))
+
 
     for tag in ('src', 'srcset', 'content', 'href'):
         if tag in img.attrs:
