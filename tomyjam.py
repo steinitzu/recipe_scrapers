@@ -23,8 +23,9 @@ def main():
     exporter = SQLAlchemyExporter(db, Recipe, Ingredient, upload_image)
     crawlers = get_crawlers()
 
-
-    scrape_and_export(exporter, crawlers)
+    scrape_and_export(exporter,
+                      *crawlers.values())
+                      #crawlers['DamnDelicious'])
 
 
 if __name__ == '__main__':

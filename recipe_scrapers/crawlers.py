@@ -1,6 +1,7 @@
 import time
 from random import randint
 import urllib2
+import re
 
 import requests
 import requests_cache
@@ -123,6 +124,22 @@ class BaseCrawler(Request):
     def exists(self, url):
         return self.exporter.exists(url)
 
+    def get_soup(self, url, **kwargs):
+        html = self.get_html(url, **kwargs)
+        soup = BeautifulSoup(html, 'lxml')
+        recipe = soup.find(itemtype='http://schema.org/Recipe')
+        if recipe:
+            return self.fix_soup(soup)
+        else:
+            return soup
+
+    def fix_soup(self, soup):
+        """
+        Modify the soup if needed before passing it
+        on to get recipe.
+        """
+        return soup
+
     def _base_crawl(self, url):
         log.info('Get links kwargs:{}'.format(
             self.get_links_kwargs))
@@ -131,43 +148,61 @@ class BaseCrawler(Request):
             *self.get_links_args,
             **self.get_links_kwargs)
         for link in links:
+            # We yield something for every link.
+            # This is so that pagination crawlers don't stop
+            # prematurely in case we run into a single page
+            # filled with only duplicate or non-recipe links.
+            # In case of duplicate or non-recipe, return None
+            # instead of a Recipe object.
             if self.exists(link):
-                continue
+                log.info('Ignoring existing recipe:"{}"'.format(link))
+                recipe = None
+                #continue
             try:
                 recipe = get_recipe(self.get_soup(link), link)
             except (NoRecipeException, InsufficientDataException) as e:
                 log.error(e.message)
-                continue
-            try:
-                recipe.image_file = self.get_file(recipe.image)
-            except (HTTPError, InvalidSchema) as e:
-                log.error(e.message)
-                recipe.image_file = None
+                recipe = None
+                #continue
+            else:
+                try:
+                    recipe.image_file = self.get_file(recipe.image)
+                except (HTTPError, InvalidSchema) as e:
+                    log.error(e.message)
+                    recipe.image_file = None
             yield recipe
 
     def _pagination_crawl(self):
         page = 1
-        recipes_in_page = 0
+        links_in_page = 0
         while True:
             url = self.page_url(page)
             try:
                 for r in self._base_crawl(url):
-                    recipes_in_page += 1
+                    links_in_page += 1
+                    if not r:
+                        # Recipe could be None
+                        # if _base_crawl found existing recipe
+                        # or a non-recipe link
+                        continue
                     yield r
             except HTTPError:
                 log.warning(
                     'Got 404, ending pagination crawl. {}'.format(url))
                 break
-            if recipes_in_page:
+            if links_in_page:
                 page += 1
-                recipes_in_page = 0
+                links_in_page = 0
             else:
                 log.warning(
                     'No links found, ending pagination crawl. {}'.format(url))
                 break
 
     def _flat_crawl(self):
-        return self._base_crawl(self.recipe_index_url)
+        for r in self._base_crawl(self.recipe_index_url):
+            if r:
+                # Check in case we get a None from _base_crawl
+                yield r
 
     def _category_crawl(self, paginate=True):
         categories = self.get_categories()
@@ -179,6 +214,13 @@ class BaseCrawler(Request):
 
 
 class MinimalistBakerCrawler(BaseCrawler):
+
+    # Standard schema recipes
+    # cookTime/prepTime/totalTime datetime attributes
+    # itemprop="image"
+    # itemprop="name"
+    # itemprop="author"
+    # itemprop="ingredients"
 
     recipe_index_url = 'http://minimalistbaker.com/recipes'
     root_url = 'http://minimalistbaker.com'
@@ -248,6 +290,7 @@ class SeasonsAndSupperCrawler(BaseCrawler):
     def init(self):
         self.crawl = self._flat_crawl
 
+    @absolute_urls
     def get_links(self, url, *args, **kwargs):
         soup = self.get_soup(url)
         for cat in soup.find_all(class_='lcp_catlist'):
@@ -264,8 +307,21 @@ class FoodHeavenMadeEasyCrawler(BaseCrawler):
         self.get_links_kwargs = {'class_': 'cat-list'}
         self.crawl = self._flat_crawl
 
+    def fix_soup(self, soup):
+        recipe = soup.find(itemtype='http://schema.org/Recipe')
+        # This site doesn't use itemprop="image" for the
+        # recipe image.
+        # Taking the image from the wp-image-#### tag
+        # and adding it as itemprop="image" under recipe schema
+        img = soup.find(class_=re.compile(r'wp-image-\w+'))
+        img['itemprop'] = 'image'
+        recipe.append(img)
+        return soup
+
 
 class SkinnyTasteCrawler(BaseCrawler):
+    # Only newest recipes are schema.org compliant
+
     root_url = 'http://www.skinnytaste.com'
     recipe_index_url = 'http://www.skinnytaste.com/recipes'
 
@@ -289,7 +345,10 @@ class DamnDeliciousCrawler(BaseCrawler):
 
 
 def get_crawlers():
-    return BaseCrawler.__subclasses__()
+    d = {}
+    for klass in BaseCrawler.__subclasses__():
+        d[klass.__name__.split('Crawler')[0]] = klass
+    return d
 
 
 # Bad crawlers below

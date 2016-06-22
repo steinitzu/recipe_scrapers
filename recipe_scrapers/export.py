@@ -59,7 +59,7 @@ class SQLAlchemyExporter(object):
         self.db.session.commit()
 
 
-def scrape_and_export(exporter, crawlers=[]):
+def scrape_and_export(exporter, *crawlers):
     crawlers = [c(exporter) for c in crawlers]
     for crawler in crawlers:
         for recipe in crawler.crawl():
