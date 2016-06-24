@@ -12,6 +12,7 @@ from requests.exceptions import InvalidSchema
 from requests.compat import urlencode
 
 from .recipes import NoRecipeException, InsufficientDataException, Recipe
+from . import souputil
 
 from . import log
 
@@ -102,12 +103,18 @@ class BaseCrawler(Request):
         return self.recipe_index_url + '/page/{}'.format(page_no)
 
     def has_recipe(self, soup):
+        # TODO: Depricated, use souputil.get_recipe_soup
         r = soup.find(itemtype='http://schema.org/Recipe')
         return True if r else False
+
+    def recipe_soup(self, soup):
+        # TODO: Depricated, use souputil.get_recipe_soup
+        return soup.find(itemtype='http://schema.org/Recipe')
 
     def get_recipe(self, soup):
         recipe = Recipe()
         recipe.url = url = soup.url
+        # TODO: use souputil.get_recipe_soup
         rsoup = soup.find(itemtype='http://schema.org/Recipe')
 
         recipe.name = rsoup.find(itemprop='name').text
@@ -324,7 +331,12 @@ class CookieAndKateCrawler(BaseCrawler):
 
     def fix_soup(self, soup):
         # TODO: set img src to img href for itemprop='image'
-        return soup
+        rsoup = self.recipe_soup(soup)
+        if not rsoup:
+            return soup
+        img = rsoup.find(itemprop='image')
+        img['src'] = img['href']
+        return souputil.insert_author(soup, 'Cookie and Kate')
 
 
 class NaturallyEllaCrawler(BaseCrawler):
@@ -431,6 +443,7 @@ class SkinnyTasteCrawler(BaseCrawler):
                 continue
             tag['datetime'] = tag['content']
         return soup
+
 
 class DamnDeliciousCrawler(BaseCrawler):
     root_url = 'http://damndelicious.net'
